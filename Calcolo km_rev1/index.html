@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8">
 
-<!-- Viewport ottimizzato per iPhone/PWA -->
 <meta name="viewport"
       content="width=device-width,
                initial-scale=1,
@@ -11,14 +10,11 @@
                user-scalable=no,
                viewport-fit=cover">
 
-<!-- Tema PWA -->
 <meta name="theme-color" content="#005BBB">
 
-<!-- Icone iOS -->
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
 
-<!-- Manifest -->
 <link rel="manifest" href="manifest.json">
 
 <title>Calcolo km percorribili</title>
@@ -34,14 +30,13 @@
         --input-bg: #2A2A2A;
         --input-number-bg: #262626;
     }
-	    /* Evita scroll laterale su iPhone */
+
     html, body {
         overflow-x: hidden;
         margin: 0;
         padding: 0;
     }
 
-    /* Assicura che padding e width non creino overflow */
     * {
         box-sizing: border-box;
     }
@@ -92,7 +87,6 @@
         color: var(--text);
         font-size: 1rem;
         margin-bottom: 14px;
-        box-sizing: border-box;
     }
 
     input[type=number] {
@@ -140,7 +134,6 @@
         border-bottom: 1px solid #333;
     }
 
-    /* Pulsanti carburante */
     .carburante-buttons {
         display: flex;
         gap: 10px;
@@ -179,13 +172,306 @@
     .worse {
         color: #FF6B6B;
     }
+	input.evidenziato {
+		border: 2px solid #00cc66 !important;
+		background-color: #00331a !important;
+		transition: 0.2s ease;
+	}
+
 </style>
 
 <script>
-// Inizializzazione pulsanti carburante
-document.addEventListener("DOMContentLoaded", () => {
-    selezionaCarburante("gasolio");
-});
+// --- Mappa regione → anchor MIMIT ---
+const anchorMIMIT={
+ "Abruzzo":"abruzzo","Basilicata":"basilicata","Calabria":"calabria","Campania":"campania",
+ "Emilia Romagna":"emilia-romagna","Friuli Venezia Giulia":"fvg","Lazio":"lazio","Liguria":"liguria",
+ "Lombardia":"lombardia","Marche":"marche","Molise":"molise","Piemonte":"piemonte",
+ "Puglia":"puglia","Sardegna":"sardegna","Sicilia":"sicilia","Toscana":"toscana",
+ "Umbria":"umbria","Valle d'Aosta":"valle-daosta","Veneto":"veneto"
+};
+
+function vaiAllaRegione(){
+    const r=document.getElementById("regione_prezzi").value;
+    const url="https://www.mimit.gov.it/it/prezzo-medio-carburanti/regioni#"+anchorMIMIT[r];
+    window.open(url,"_blank");
+}
+
+// --- Salva / carica prezzi ---
+function salvaPrezzi(){
+    const regione = document.getElementById("regione_prezzi").value;
+    const gasolio = document.getElementById("costo_gasolio").value || "";
+    const benzina = document.getElementById("costo_benzina").value || "";
+
+    if (gasolio.trim() === "" && benzina.trim() === "") {
+        document.getElementById("info_prezzi").innerHTML = "Inserisci prima un prezzo carburante.";
+        return;
+    }
+
+    const stamp=new Date().toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
+    const dati={regione,gasolio,benzina,data:stamp};
+    localStorage.setItem("ultimiPrezzi",JSON.stringify(dati));
+    document.getElementById("info_prezzi").innerHTML=`Prezzi aggiornati il ${stamp}`;
+}
+
+function caricaPrezziSalvati(){
+    const salv=localStorage.getItem("ultimiPrezzi");
+    if(!salv)return;
+    const d=JSON.parse(salv);
+    document.getElementById("regione_prezzi").value=d.regione;
+    document.getElementById("costo_gasolio").value=d.gasolio;
+    document.getElementById("costo_benzina").value=d.benzina;
+    document.getElementById("info_prezzi").innerHTML=`Prezzi aggiornati il ${d.data}`;
+}
+
+// --- Consumi ---
+function caricaConsumi() {
+    const salv = localStorage.getItem("consumi_modelli");
+    if (salv) return JSON.parse(salv);
+    return { auto_diesel: 4.8, auto_benzina: 6.4, moto: 4.0 };
+}
+let consumi=caricaConsumi();
+
+function aggiornaTabellaConsumi(){
+    document.getElementById("c_auto_diesel").value=consumi.auto_diesel;
+    document.getElementById("c_auto_benzina").value=consumi.auto_benzina;
+    document.getElementById("c_moto").value=consumi.moto;
+}
+function salvaConsumi(){
+    consumi.auto_diesel=parseFloat(document.getElementById("c_auto_diesel").value);
+    consumi.auto_benzina=parseFloat(document.getElementById("c_auto_benzina").value);
+    consumi.moto=parseFloat(document.getElementById("c_moto").value);
+    localStorage.setItem("consumi_modelli",JSON.stringify(consumi));
+    aggiornaModello();
+}
+function toggleConsumi(){
+    const box=document.getElementById("consumi_box");
+    box.style.display=box.style.display==="none"?"block":"none";
+}
+function ripristinaConsumi() {
+    consumi = {
+        auto_diesel: 4.8,
+        auto_benzina: 6.4,
+        moto: 4.0
+    };
+
+    localStorage.removeItem("consumi_modelli");
+
+    aggiornaTabellaConsumi();
+    aggiornaModello();
+}
+
+// --- Utility ---
+function nomeModello(m){
+    if(m==="auto_diesel")return"Auto Diesel";
+    if(m==="auto_benzina")return"Auto Benzina";
+    if(m==="moto")return"Moto";
+    return m;
+}
+
+// --- Pulsanti carburante ---
+function selezionaCarburante(tipo) {
+    const radioGasolio=document.getElementById("radioGasolio");
+    const radioBenzina=document.getElementById("radioBenzina");
+
+    radioGasolio.checked = (tipo === "gasolio");
+    radioBenzina.checked = (tipo === "benzina");
+
+    document.getElementById("btnGasolio").classList.toggle("active", tipo === "gasolio");
+    document.getElementById("btnBenzina").classList.toggle("active", tipo === "benzina");
+
+    document.getElementById("costo_gasolio").disabled = (tipo !== "gasolio");
+    document.getElementById("costo_benzina").disabled = (tipo !== "benzina");
+}
+
+// --- Modello → carburante automatico ---
+function aggiornaModello() {
+    const modello = document.getElementById("modello").value;
+
+    document.getElementById("consumo").value = consumi[modello];
+
+    const cg = document.getElementById("costo_gasolio");
+    const cb = document.getElementById("costo_benzina");
+
+    cg.classList.remove("evidenziato");
+    cb.classList.remove("evidenziato");
+
+    if (modello === "auto_diesel") {
+        selezionaCarburante("gasolio");
+        cg.classList.add("evidenziato");
+    } else {
+        selezionaCarburante("benzina");
+        cb.classList.add("evidenziato");
+    }
+}
+
+
+// --- Prezzo carburante ---
+function prezzoCarburante() {
+    const modello = document.getElementById("modello").value;
+
+    if (modello === "auto_diesel") {
+        return parseFloat(document.getElementById("costo_gasolio").value);
+    } else {
+        return parseFloat(document.getElementById("costo_benzina").value);
+    }
+}
+
+// --- Ricalcolo intelligente ---
+let valoriPrecedenti={consumo:"",costo_gasolio:"",costo_benzina:"",budget:"",km_input:""};
+let calcoloEseguito=false;
+
+function controllaModifica(campo){
+    const nuovo=document.getElementById(campo).value;
+    const vecchio=valoriPrecedenti[campo];
+
+    if(!calcoloEseguito){
+        valoriPrecedenti[campo]=nuovo;
+        return;
+    }
+    if(vecchio===""||nuovo===""){
+        valoriPrecedenti[campo]=nuovo;
+        return;
+    }
+    if(nuovo!==vecchio){
+        if(campo==="budget"||campo==="consumo"||campo==="costo_gasolio"||campo==="costo_benzina"){
+            document.getElementById("ricalcola_km").style.display="inline-block";
+        }
+        if(campo==="km_input"||campo==="consumo"||campo==="costo_gasolio"||campo==="costo_benzina"){
+            document.getElementById("ricalcola_costo").style.display="inline-block";
+        }
+    }
+    valoriPrecedenti[campo]=nuovo;
+}
+
+// --- Calcolo km / costo ---
+let ultimoTipo=null;
+let ultimoValore=null;
+
+function calcolaKm(){
+    const modello=document.getElementById("modello").value;
+    const consumo=parseFloat(document.getElementById("consumo").value);
+    const costo=prezzoCarburante();
+    const budget=parseFloat(document.getElementById("budget").value);
+
+    if(isNaN(consumo)||isNaN(costo)||isNaN(budget)||costo<=0){
+        document.getElementById("risultato").innerHTML="Compila correttamente consumo, costo carburante e budget.";
+        return;
+    }
+
+    const litri=budget/costo;
+    const km=litri*(100/consumo);
+
+    ultimoTipo="km";
+    ultimoValore=km;
+    calcoloEseguito=true;
+
+    document.getElementById("risultato").innerHTML =
+    `Con <span class="mainvalue">${nomeModello(modello)}</span> puoi percorrere <span class="mainvalue">${km.toFixed(1)} km</span>`;
+
+    aggiornaDifferenze();
+    document.getElementById("ricalcola_km").style.display="none";
+}
+
+function calcolaCosto(){
+    const modello=document.getElementById("modello").value;
+    const consumo=parseFloat(document.getElementById("consumo").value);
+    const costo=prezzoCarburante();
+    const km=parseFloat(document.getElementById("km_input").value);
+
+    if(isNaN(consumo)||isNaN(costo)||isNaN(km)||costo<=0){
+        document.getElementById("risultato").innerHTML="Compila correttamente consumo, costo carburante e km.";
+        return;
+    }
+
+    const litri=(km*consumo)/100;
+    const euro=litri*costo;
+
+    ultimoTipo="costo";
+    ultimoValore=euro;
+    calcoloEseguito=true;
+
+    document.getElementById("risultato").innerHTML =
+    `Con <span class="mainvalue">${nomeModello(modello)}</span> spenderesti <span class="mainvalue">${euro.toFixed(2)} €</span>`;
+
+    aggiornaDifferenze();
+    document.getElementById("ricalcola_costo").style.display="none";
+}
+
+function ricalcolaKm(){calcolaKm();}
+function ricalcolaCosto(){calcolaCosto();}
+
+// --- Differenze ---
+function aggiornaDifferenze(){
+    if(!ultimoTipo)return;
+
+    const modelloSel=document.getElementById("modello").value;
+    let testo="";
+
+    if(ultimoTipo==="km"){
+        const km=ultimoValore;
+        testo+=`<h4>Confronto per ${km.toFixed(1)} km</h4>`;
+        const risultati={};
+
+        for(let m in consumi){
+            const consumo=consumi[m];
+            const prezzo=m==="auto_diesel"
+                ? parseFloat(document.getElementById("costo_gasolio").value)
+                : parseFloat(document.getElementById("costo_benzina").value);
+            const litri=(km*consumo)/100;
+            const costo=litri*prezzo;
+            risultati[m]=costo;
+        }
+
+        testo+=`<span class="mainvalue">Con ${nomeModello(modelloSel)} spenderesti ${risultati[modelloSel].toFixed(2)} €</span><br><br>`;
+        testo+="<b>Altri modelli:</b><br>";
+
+        for(let m in risultati){
+            if(m===modelloSel)continue;
+            const costo=risultati[m].toFixed(2);
+            const cls=risultati[m]>risultati[modelloSel]?"worse":"better";
+            testo+=`<span class="${cls}">Con ${nomeModello(m)} spenderesti ${costo} €</span><br>`;
+        }
+    }else{
+        const euro=ultimoValore;
+        testo+=`<h4>Confronto con ${euro.toFixed(2)} €</h4>`;
+        const risultati={};
+
+        for(let m in consumi){
+            const consumo=consumi[m];
+            const prezzo=m==="auto_diesel"
+                ? parseFloat(document.getElementById("costo_gasolio").value)
+                : parseFloat(document.getElementById("costo_benzina").value);
+            const litri=euro/prezzo;
+            const km=litri*(100/consumo);
+            risultati[m]=km;
+        }
+
+        testo+=`<span class="mainvalue">Con ${nomeModello(modelloSel)} puoi percorrere ${risultati[modelloSel].toFixed(1)} km</span><br><br>`;
+        testo+="<b>Altri modelli:</b><br>";
+
+        for(let m in risultati){
+            if(m===modelloSel)continue;
+            const km=risultati[m].toFixed(1);
+            const cls=risultati[m]>risultati[modelloSel]?"better":"worse";
+            testo+=`<span class="${cls}">Con ${nomeModello(m)} potresti percorrere ${km} km</span><br>`;
+        }
+    }
+
+    document.getElementById("confronto").innerHTML=testo;
+}
+
+// --- On load ---
+window.onload=()=>{
+    aggiornaTabellaConsumi();
+    aggiornaModello();
+    caricaPrezziSalvati();
+};
+</script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
 </script>
 </head>
 
@@ -285,298 +571,6 @@ document.addEventListener("DOMContentLoaded", () => {
     <div id="confronto" class="card"></div>
 
 </div>
-
-<script>
-// --- Mappa regione → anchor MIMIT ---
-const anchorMIMIT={
- "Abruzzo":"abruzzo","Basilicata":"basilicata","Calabria":"calabria","Campania":"campania",
- "Emilia Romagna":"emilia-romagna","Friuli Venezia Giulia":"fvg","Lazio":"lazio","Liguria":"liguria",
- "Lombardia":"lombardia","Marche":"marche","Molise":"molise","Piemonte":"piemonte",
- "Puglia":"puglia","Sardegna":"sardegna","Sicilia":"sicilia","Toscana":"toscana",
- "Umbria":"umbria","Valle d'Aosta":"valle-daosta","Veneto":"veneto"
-};
-
-function vaiAllaRegione(){
-    const r=document.getElementById("regione_prezzi").value;
-    const url="https://www.mimit.gov.it/it/prezzo-medio-carburanti/regioni#"+anchorMIMIT[r];
-    window.open(url,"_blank");
-}
-
-// --- Salva / carica prezzi ---
-function salvaPrezzi(){
-    const regione=document.getElementById("regione_prezzi").value;
-    const gasolio=document.getElementById("costo_gasolio").value;
-    const benzina=document.getElementById("costo_benzina").value;
-    if(!gasolio||!benzina){
-        document.getElementById("info_prezzi").innerHTML="Inserisci prima i prezzi da salvare.";
-        return;
-    }
-    const stamp=new Date().toLocaleString("it-IT",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});
-    const dati={regione,gasolio,benzina,data:stamp};
-    localStorage.setItem("ultimiPrezzi",JSON.stringify(dati));
-    document.getElementById("info_prezzi").innerHTML=`Prezzi aggiornati il ${stamp}`;
-}
-
-function caricaPrezziSalvati(){
-    const salv=localStorage.getItem("ultimiPrezzi");
-    if(!salv)return;
-    const d=JSON.parse(salv);
-    document.getElementById("regione_prezzi").value=d.regione;
-    document.getElementById("costo_gasolio").value=d.gasolio;
-    document.getElementById("costo_benzina").value=d.benzina;
-    document.getElementById("info_prezzi").innerHTML=`Prezzi aggiornati il ${d.data}`;
-}
-
-// --- Consumi ---
-function caricaConsumi() {
-    const salv = localStorage.getItem("consumi_modelli");
-    if (salv) return JSON.parse(salv);
-    return { auto_diesel: 4.8, auto_benzina: 6.4, moto: 4.0 };
-}
-let consumi=caricaConsumi();
-
-function aggiornaTabellaConsumi(){
-    document.getElementById("c_auto_diesel").value=consumi.auto_diesel;
-    document.getElementById("c_auto_benzina").value=consumi.auto_benzina;
-    document.getElementById("c_moto").value=consumi.moto;
-}
-function salvaConsumi(){
-    consumi.auto_diesel=parseFloat(document.getElementById("c_auto_diesel").value);
-    consumi.auto_benzina=parseFloat(document.getElementById("c_auto_benzina").value);
-    consumi.moto=parseFloat(document.getElementById("c_moto").value);
-    localStorage.setItem("consumi_modelli",JSON.stringify(consumi));
-    aggiornaModello();
-}
-function toggleConsumi(){
-    const box=document.getElementById("consumi_box");
-    box.style.display=box.style.display==="none"?"block":"none";
-}
-function ripristinaConsumi() {
-    consumi = {
-        auto_diesel: 4.8,
-        auto_benzina: 6.4,
-        moto: 4.0
-    };
-
-    localStorage.removeItem("consumi_modelli");
-
-    aggiornaTabellaConsumi();
-    aggiornaModello();
-}
-
-// --- Utility ---
-function nomeModello(m){
-    if(m==="auto_diesel")return"Auto Diesel";
-    if(m==="auto_benzina")return"Auto Benzina";
-    if(m==="moto")return"Moto";
-    return m;
-}
-
-// --- Modello e carburante ---
-function aggiornaModello(){
-    const modello=document.getElementById("modello").value;
-    document.getElementById("consumo").value=consumi[modello];
-
-    const radioGasolio=document.getElementById("radioGasolio");
-    const radioBenzina=document.getElementById("radioBenzina");
-
-    radioGasolio.disabled=false;
-    radioBenzina.disabled=false;
-
-    if(modello==="auto_diesel"){
-        radioGasolio.checked=true;
-        radioBenzina.checked=false;
-        radioBenzina.disabled=true;
-        selezionaCarburante("gasolio");
-    }else{
-        radioGasolio.checked=false;
-        radioBenzina.checked=true;
-        radioGasolio.disabled=true;
-        selezionaCarburante("benzina");
-    }
-
-    document.getElementById("costo_gasolio").disabled=radioGasolio.disabled;
-    document.getElementById("costo_benzina").disabled=radioBenzina.disabled;
-}
-
-// --- Ricalcola intelligente ---
-let valoriPrecedenti={consumo:"",costo_gasolio:"",costo_benzina:"",budget:"",km_input:""};
-let calcoloEseguito=false;
-
-function controllaModifica(campo){
-    const nuovo=document.getElementById(campo).value;
-    const vecchio=valoriPrecedenti[campo];
-
-    if(!calcoloEseguito){
-        valoriPrecedenti[campo]=nuovo;
-        return;
-    }
-    if(vecchio===""||nuovo===""){
-        valoriPrecedenti[campo]=nuovo;
-        return;
-    }
-    if(nuovo!==vecchio){
-        if(campo==="budget"||campo==="consumo"||campo==="costo_gasolio"||campo==="costo_benzina"){
-            document.getElementById("ricalcola_km").style.display="inline-block";
-        }
-        if(campo==="km_input"||campo==="consumo"||campo==="costo_gasolio"||campo==="costo_benzina"){
-            document.getElementById("ricalcola_costo").style.display="inline-block";
-        }
-    }
-    valoriPrecedenti[campo]=nuovo;
-}
-
-// --- Prezzo carburante ---
-function prezzoCarburante(){
-    const modello=document.getElementById("modello").value;
-    return modello==="auto_diesel"
-        ? parseFloat(document.getElementById("costo_gasolio").value)
-        : parseFloat(document.getElementById("costo_benzina").value);
-}
-
-let ultimoTipo=null;
-let ultimoValore=null;
-
-// --- Calcolo km ---
-function calcolaKm(){
-    const modello=document.getElementById("modello").value;
-    const consumo=parseFloat(document.getElementById("consumo").value);
-    const costo=prezzoCarburante();
-    const budget=parseFloat(document.getElementById("budget").value);
-
-    if(isNaN(consumo)||isNaN(costo)||isNaN(budget)||costo<=0){
-        document.getElementById("risultato").innerHTML="Compila correttamente consumo, costo carburante e budget.";
-        return;
-    }
-
-    const litri=budget/costo;
-    const km=litri*(100/consumo);
-
-    ultimoTipo="km";
-    ultimoValore=km;
-    calcoloEseguito=true;
-
-    document.getElementById("risultato").innerHTML =
-    `Con <span class="mainvalue">${nomeModello(modello)}</span> puoi percorrere <span class="mainvalue">${km.toFixed(1)} km</span>`;
-
-    aggiornaDifferenze();
-    document.getElementById("ricalcola_km").style.display="none";
-}
-
-// --- Calcolo costo ---
-function calcolaCosto(){
-    const modello=document.getElementById("modello").value;
-    const consumo=parseFloat(document.getElementById("consumo").value);
-    const costo=prezzoCarburante();
-    const km=parseFloat(document.getElementById("km_input").value);
-
-    if(isNaN(consumo)||isNaN(costo)||isNaN(km)||costo<=0){
-        document.getElementById("risultato").innerHTML="Compila correttamente consumo, costo carburante e km.";
-        return;
-    }
-
-    const litri=(km*consumo)/100;
-    const euro=litri*costo;
-
-    ultimoTipo="costo";
-    ultimoValore=euro;
-    calcoloEseguito=true;
-
-    document.getElementById("risultato").innerHTML =
-    `Con <span class="mainvalue">${nomeModello(modello)}</span> spenderesti <span class="mainvalue">${euro.toFixed(2)} €</span>`;
-
-    aggiornaDifferenze();
-    document.getElementById("ricalcola_costo").style.display="none";
-}
-
-function ricalcolaKm(){calcolaKm();}
-function ricalcolaCosto(){calcolaCosto();}
-
-// --- Differenze uniformate ---
-function aggiornaDifferenze(){
-    if(!ultimoTipo)return;
-
-    const modelloSel=document.getElementById("modello").value;
-    let testo="";
-
-    if(ultimoTipo==="km"){
-        const km=ultimoValore;
-        testo+=`<h4>Confronto per ${km.toFixed(1)} km</h4>`;
-        const risultati={};
-
-        for(let m in consumi){
-            const consumo=consumi[m];
-            const prezzo=m==="auto_diesel"
-                ? parseFloat(document.getElementById("costo_gasolio").value)
-                : parseFloat(document.getElementById("costo_benzina").value);
-            const litri=(km*consumo)/100;
-            const costo=litri*prezzo;
-            risultati[m]=costo;
-        }
-
-        testo+=`<span class="mainvalue">Con ${nomeModello(modelloSel)} spenderesti ${risultati[modelloSel].toFixed(2)} €</span><br><br>`;
-        testo+="<b>Altri modelli:</b><br>";
-
-        for(let m in risultati){
-            if(m===modelloSel)continue;
-            const costo=risultati[m].toFixed(2);
-            const cls=risultati[m]>risultati[modelloSel]?"worse":"better";
-            testo+=`<span class="${cls}">Con ${nomeModello(m)} spenderesti ${costo} €</span><br>`;
-        }
-    }else{
-        const euro=ultimoValore;
-        testo+=`<h4>Confronto con ${euro.toFixed(2)} €</h4>`;
-        const risultati={};
-
-        for(let m in consumi){
-            const consumo=consumi[m];
-            const prezzo=m==="auto_diesel"
-                ? parseFloat(document.getElementById("costo_gasolio").value)
-                : parseFloat(document.getElementById("costo_benzina").value);
-            const litri=euro/prezzo;
-            const km=litri*(100/consumo);
-            risultati[m]=km;
-        }
-
-        testo+=`<span class="mainvalue">Con ${nomeModello(modelloSel)} puoi percorrere ${risultati[modelloSel].toFixed(1)} km</span><br><br>`;
-        testo+="<b>Altri modelli:</b><br>";
-
-        for(let m in risultati){
-            if(m===modelloSel)continue;
-            const km=risultati[m].toFixed(1);
-            const cls=risultati[m]>risultati[modelloSel]?"better":"worse";
-            testo+=`<span class="${cls}">Con ${nomeModello(m)} potresti percorrere ${km} km</span><br>`;
-        }
-    }
-
-    document.getElementById("confronto").innerHTML=testo;
-}
-
-// --- Pulsanti carburante ---
-function selezionaCarburante(tipo) {
-    const radioGasolio=document.getElementById("radioGasolio");
-    const radioBenzina=document.getElementById("radioBenzina");
-
-    radioGasolio.checked = (tipo === "gasolio");
-    radioBenzina.checked = (tipo === "benzina");
-
-    document.getElementById("btnGasolio").classList.toggle("active", tipo === "gasolio");
-    document.getElementById("btnBenzina").classList.toggle("active", tipo === "benzina");
-}
-
-// --- On load ---
-window.onload=()=>{
-    aggiornaTabellaConsumi();
-    aggiornaModello();
-    caricaPrezziSalvati();
-};
-</script>
-
-<script>
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
-}
-</script>
 
 </body>
 </html>
