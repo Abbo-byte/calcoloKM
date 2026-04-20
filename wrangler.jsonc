@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "calcolokm",
+  "compatibility_date": "2026-04-20",
+  "observability": {
+    "enabled": true
+  },
+  "assets": {
+    "directory": "Calcolo km_rev1"
+  },
+  "compatibility_flags": [
+    "nodejs_compat"
+  ]
+}
