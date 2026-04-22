@@ -12,8 +12,7 @@
 
 <meta name="theme-color" content="#005BBB">
 
-<link rel="apple-touch-icon" href="icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" href="icon192.png">
 
 <link rel="manifest" href="manifest.json">
 
@@ -56,12 +55,12 @@
         margin-bottom: 18px;
     }
 
-    .app-container {
-        width: 100%;
-        max-width: 420px;
-        margin: auto;
-        padding: 0 16px 40px;
-    }
+	.app-container {
+		width: 100%;
+		max-width: 100%;        /* ← rimuove il limite dei 420px */
+		margin: 0;              /* ← niente centratura forzata */
+		padding: 0 16px 40px;   /* ← mantiene respiro laterale */
+	}
 
     .card {
         background: var(--card);
@@ -69,7 +68,15 @@
         border-radius: var(--radius);
         margin-bottom: 22px;
         box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+		
     }
+	/* Estensione per layout full‑width responsivo */
+	.card {
+		width: 100%;
+		max-width: 900px;      /* limite elegante su desktop */
+		margin-left: auto;
+		margin-right: auto;
+	}
 
     label {
         display: block;
@@ -118,7 +125,26 @@
         background: #333;
         border: 1px solid #555;
     }
+	
+	#btnImpostazioniConsumi {
+		background: #ff9500;
+		color: #000;
+		border: 1px solid #ff9500;
+		font-weight: 600;
+		padding: 12px 20px;
+		border-radius: 14px;
 
+		width: 200px;
+		margin: 0 auto 20px auto;
+
+		white-space: nowrap;
+
+		display: flex;               /* centratura perfetta */
+		justify-content: center;
+		align-items: center;
+		text-align: center;
+	}
+	
     .ricalcola-btn {
         background: #0077FF !important;
     }
@@ -177,7 +203,18 @@
 		background-color: #00331a !important;
 		transition: 0.2s ease;
 	}
-
+	
+	#aggiornamento {
+    text-align: center;
+	}
+	
+	/* Campo evidenziato in verde (già esiste ma lo rinforziamo) */
+	input.evidenziato {
+		border: 2px solid #00cc66 !important;
+		background-color: #00331a !important;
+		transition: 0.2s ease;
+	}
+	
 </style>
 
 <script>
@@ -270,18 +307,26 @@ function nomeModello(m){
 
 // --- Pulsanti carburante ---
 function selezionaCarburante(tipo) {
-    const radioGasolio=document.getElementById("radioGasolio");
-    const radioBenzina=document.getElementById("radioBenzina");
+    const cg = document.getElementById("costo_gasolio");
+    const cb = document.getElementById("costo_benzina");
 
-    radioGasolio.checked = (tipo === "gasolio");
-    radioBenzina.checked = (tipo === "benzina");
-
+    // Selezione pulsanti
     document.getElementById("btnGasolio").classList.toggle("active", tipo === "gasolio");
     document.getElementById("btnBenzina").classList.toggle("active", tipo === "benzina");
 
-    document.getElementById("costo_gasolio").disabled = (tipo !== "gasolio");
-    document.getElementById("costo_benzina").disabled = (tipo !== "benzina");
+    // Abilita/disabilita campi
+    cg.disabled = (tipo !== "gasolio");
+    cb.disabled = (tipo !== "benzina");
+
+    // Rimuovi evidenziazioni precedenti
+    cg.classList.remove("evidenziato");
+    cb.classList.remove("evidenziato");
+
+    // Evidenzia il campo da compilare
+    if (tipo === "gasolio") cg.classList.add("evidenziato");
+    else cb.classList.add("evidenziato");
 }
+
 
 // --- Modello → carburante automatico ---
 function aggiornaModello() {
@@ -304,7 +349,6 @@ function aggiornaModello() {
     }
 }
 
-
 // --- Prezzo carburante ---
 function prezzoCarburante() {
     const modello = document.getElementById("modello").value;
@@ -315,6 +359,20 @@ function prezzoCarburante() {
         return parseFloat(document.getElementById("costo_benzina").value);
     }
 }
+
+function ripristinaCarburanteVeicolo() {
+    const modello = document.getElementById("modello").value;
+
+    if (modello === "auto_diesel") {
+        selezionaCarburante("gasolio");
+    } else {
+        selezionaCarburante("benzina");
+    }
+
+    // Riapplica evidenziazione corretta
+    aggiornaModello();
+}
+
 
 // --- Ricalcolo intelligente ---
 let valoriPrecedenti={consumo:"",costo_gasolio:"",costo_benzina:"",budget:"",km_input:""};
@@ -490,7 +548,7 @@ if ("serviceWorker" in navigator) {
     </div>
 
     <!-- BLOCCO: Impostazioni consumi -->
-    <button class="btn-secondary" onclick="toggleConsumi()">Impostazioni consumi</button>
+	<button id="btnImpostazioniConsumi" onclick="toggleConsumi()">Impostazioni consumi</button>
 
     <div id="consumi_box" class="card" style="display:none;">
         <h3>Consumi preimpostati</h3>
@@ -506,7 +564,7 @@ if ("serviceWorker" in navigator) {
     <!-- BLOCCO: Regione e prezzi -->
     <div class="card">
         <label>Regione:</label>
-        <select id="regione_prezzi">
+        <select id="regione_prezzi" onfocus="ripristinaCarburanteVeicolo()">
             <option>Abruzzo</option><option>Basilicata</option><option>Calabria</option><option>Campania</option>
             <option>Emilia Romagna</option><option>Friuli Venezia Giulia</option><option>Lazio</option><option>Liguria</option>
             <option>Lombardia</option><option>Marche</option><option>Molise</option><option>Piemonte</option>
@@ -523,14 +581,17 @@ if ("serviceWorker" in navigator) {
     <!-- BLOCCO: Impostazioni carburante -->
     <div class="card">
         <label>Modello auto/moto:</label>
-        <select id="modello" onchange="aggiornaModello();">
+        <select id="modello"
+				onchange="aggiornaModello();"
+				onfocus="ripristinaCarburanteVeicolo()">
             <option value="auto_diesel">Auto Diesel</option>
             <option value="auto_benzina">Auto Benzina</option>
             <option value="moto">Moto</option>
         </select>
 
         <label>Consumo (L/100km):</label>
-        <input type="number" id="consumo" step="0.1" oninput="controllaModifica('consumo')">
+        <input type="number" id="consumo" step="0.1" oninput="controllaModifica('consumo')"
+		onfocus="ripristinaCarburanteVeicolo()">
 
         <h3>Tipo di carburante</h3>
 
@@ -543,16 +604,24 @@ if ("serviceWorker" in navigator) {
         <input type="radio" name="carburante" value="benzina" id="radioBenzina" style="display:none;">
 
         <label>Costo gasolio (€/litro):</label>
-        <input type="number" id="costo_gasolio" step="0.01" oninput="controllaModifica('costo_gasolio')">
+        <input type="number" id="costo_gasolio" step="0.01"
+       oninput="controllaModifica('costo_gasolio')"
+       onblur="ripristinaCarburanteVeicolo()">
+
 
         <label>Costo benzina (€/litro):</label>
-        <input type="number" id="costo_benzina" step="0.01" oninput="controllaModifica('costo_benzina')">
+        <input type="number" id="costo_benzina" step="0.01"
+       oninput="controllaModifica('costo_benzina');"
+       onblur="ripristinaCarburanteVeicolo()">
+
+
     </div>
 
     <!-- BLOCCO: Calcolo km percorribili -->
     <div class="card">
         <label>Budget disponibile (euro):</label>
-        <input type="number" id="budget" step="0.01" oninput="controllaModifica('budget')">
+        <input type="number" id="budget" step="0.01" oninput="controllaModifica('budget')"
+		onfocus="ripristinaCarburanteVeicolo()">
 
         <button onclick="calcolaKm()">Calcola km percorribili</button>
         <button id="ricalcola_km" class="ricalcola-btn" style="display:none;margin-top:10px;" onclick="ricalcolaKm()">Ricalcola</button>
@@ -561,7 +630,8 @@ if ("serviceWorker" in navigator) {
     <!-- BLOCCO: Calcolo costo viaggio -->
     <div class="card">
         <label>Km da percorrere (per calcolare il costo):</label>
-        <input type="number" id="km_input" step="0.1" oninput="controllaModifica('km_input')">
+        <input type="number" id="km_input" step="0.1" oninput="controllaModifica('km_input')"
+		onfocus="ripristinaCarburanteVeicolo()">
 
         <button onclick="calcolaCosto()">Calcola costo in euro</button>
         <button id="ricalcola_costo" class="ricalcola-btn" style="display:none;margin-top:10px;" onclick="ricalcolaCosto()">Ricalcola</button>
